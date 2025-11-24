@@ -45,7 +45,6 @@
     color:#cfaeff;
   }
 
-  /* Overlays */
   .overlay {
     position: absolute;
     inset: 0;
@@ -76,7 +75,6 @@
     opacity: 0.75;
   }
 
-  /* High score list */
   .scores {
     margin-top: 14px;
     display: inline-block;
@@ -86,7 +84,7 @@
     border-radius: 10px;
     padding: 10px 14px;
     box-shadow: 0 0 14px #8e3bff55;
-    min-width: 220px;
+    min-width: 260px;
   }
   .scores h2 {
     margin: 0 0 8px;
@@ -101,13 +99,67 @@
     font-size: 14px;
     color: #efe8ff;
   }
-  .scores li {
-    margin: 3px 0;
-  }
+  .scores li { margin: 3px 0; }
   .score-highlight {
     color: #5dfff7;
     font-weight: 700;
     text-shadow: 0 0 8px #5dfff7;
+  }
+
+  .handleBox {
+    margin-top: 12px;
+    background: #0f0220cc;
+    border: 1px solid #8e3bff;
+    border-radius: 10px;
+    padding: 12px;
+    box-shadow: 0 0 12px #8e3bff55;
+    display: none;
+  }
+  .handleBox label {
+    display:block;
+    font-size: 13px;
+    color:#cdaeff;
+    margin-bottom: 6px;
+  }
+  .handleRow {
+    display:flex;
+    gap: 8px;
+    align-items:center;
+  }
+  .handleRow input {
+    flex:1;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #8e3bff;
+    background:#120427;
+    color:#efe8ff;
+    outline:none;
+    font-size: 14px;
+  }
+  .handleRow button {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid #8e3bff;
+    background:#2a0b4d;
+    color:#efe8ff;
+    font-weight:700;
+    cursor:pointer;
+  }
+  .handleRow button:disabled {
+    opacity: 0.4;
+    cursor:not-allowed;
+  }
+  .handleHint {
+    margin-top: 6px;
+    font-size: 12px;
+    opacity: 0.8;
+    color:#cdaeff;
+  }
+  .handleError {
+    margin-top: 6px;
+    font-size: 12px;
+    color:#ff9bf3;
+    display:none;
   }
 </style>
 </head>
@@ -127,7 +179,6 @@
     Your exes get faster each loop.
   </div>
 
-  <!-- Start screen overlay -->
   <div id="startOverlay" class="overlay" role="button" aria-label="Start game">
     <div>
       <h1>AVOID YOUR EXES!</h1>
@@ -136,11 +187,20 @@
     </div>
   </div>
 
-  <!-- Game over overlay -->
   <div id="gameOverOverlay" class="overlay" style="display:none;" role="button" aria-label="Game over">
     <div>
       <h1>YOUVE GONE MAD. GAME OVER</h1>
       <p>Your score: <span id="finalScore" class="score-highlight">0</span></p>
+
+      <div id="handleBox" class="handleBox">
+        <label for="igHandle">Enter your Instagram handle to get on the leaderboard</label>
+        <div class="handleRow">
+          <input id="igHandle" type="text" placeholder="@yourhandle" maxlength="30" autocomplete="off" />
+          <button id="submitHandle" disabled>Submit</button>
+        </div>
+        <div class="handleHint">Allowed: letters, numbers, periods, underscores. No spaces.</div>
+        <div id="handleError" class="handleError">That handle looks invalid. Try again.</div>
+      </div>
 
       <div class="scores">
         <h2>High Scores</h2>
@@ -156,7 +216,6 @@
 (() => {
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d");
-
   const TILE = 24;
 
   const MAP = [
@@ -193,19 +252,14 @@
 
   const ROWS = MAP.length;
   const COLS = MAP[0].length;
-
   canvas.width = COLS * TILE;
   canvas.height = ROWS * TILE;
 
-  // Sprite
   const djSprite = new Image();
   djSprite.src = "./dj_sprite_48.png";
-  djSprite.onerror = () => {
-    console.error("Could not load dj_sprite_48.png. Put it in the same folder as this HTML.");
-  };
+  djSprite.onerror = () => console.error("Missing dj_sprite_48.png next to index.html.");
 
-  // Music
-  const music = new Audio("Loveli%20Lori.mp3");
+  const music = new Audio("loveli-lori.mp3");
   music.loop = true;
   music.volume = 0.6;
 
@@ -220,27 +274,37 @@
   const finalScoreEl = document.getElementById("finalScore");
   const highScoreListEl = document.getElementById("highScoreList");
 
-  const HIGH_SCORE_KEY = "djPacHighScores";
+  const handleBox = document.getElementById("handleBox");
+  const igHandleInput = document.getElementById("igHandle");
+  const submitHandleBtn = document.getElementById("submitHandle");
+  const handleError = document.getElementById("handleError");
+
+  const HIGH_SCORE_KEY = "djPacHighScoresV2";
   const MAX_SCORES = 5;
 
   function loadHighScores(){
     try {
       const raw = localStorage.getItem(HIGH_SCORE_KEY);
       const arr = raw ? JSON.parse(raw) : [];
-      return Array.isArray(arr) ? arr : [];
+      return Array.isArray(arr) ? arr.filter(x => x && typeof x.score === "number" && typeof x.handle === "string") : [];
     } catch {
       return [];
     }
   }
-
   function saveHighScores(arr){
     localStorage.setItem(HIGH_SCORE_KEY, JSON.stringify(arr));
   }
 
-  function addHighScore(newScore){
+  function qualifiesForHighScore(newScore){
+    const scores = loadHighScores().sort((a,b)=>b.score-a.score);
+    if (scores.length < MAX_SCORES) return true;
+    return newScore > scores[scores.length - 1].score;
+  }
+
+  function addHighScore(handle, newScore){
     const scores = loadHighScores();
-    scores.push(newScore);
-    scores.sort((a,b)=>b-a);
+    scores.push({ handle, score: newScore });
+    scores.sort((a,b)=>b.score-a.score);
     const trimmed = scores.slice(0, MAX_SCORES);
     saveHighScores(trimmed);
     return trimmed;
@@ -256,9 +320,21 @@
     }
     scores.forEach((s)=>{
       const li = document.createElement("li");
-      li.textContent = s;
+      li.textContent = `@${s.handle}  –  ${s.score}`;
       highScoreListEl.appendChild(li);
     });
+  }
+
+  function normalizeHandle(raw){
+    let h = (raw || "").trim();
+    if (h.startsWith("@")) h = h.slice(1);
+    return h;
+  }
+
+  function isValidHandle(h){
+    if (!h) return false;
+    if (h.length < 1 || h.length > 30) return false;
+    return /^[a-zA-Z0-9._]+$/.test(h);
   }
 
   const dirs = {
@@ -269,13 +345,7 @@
   };
   const dirList = [dirs.left, dirs.right, dirs.up, dirs.down];
 
-  const DJ = {
-    x: 13, y: 23,
-    dir: dirs.left,
-    nextDir: dirs.left,
-    speed: 6,
-    _acc: 0
-  };
+  const DJ = { x:13, y:23, dir:dirs.left, nextDir:dirs.left, speed:6, _acc:0 };
 
   const ARS = [
     {x:13, y:14, dir: dirs.left,  home:{x:13,y:14}, name:"Chad", type:"blinky", outline:"#ff4fd8", _acc:0},
@@ -286,7 +356,7 @@
 
   function countPellets(){
     let n = 0;
-    for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++) {
+    for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++){
       const ch = grid[r]?.[c];
       if (ch === "." || ch === "o") n++;
     }
@@ -300,28 +370,22 @@
   let gameOver = false;
   let loopCount = 0;
   let started = false;
+  let pendingHighScore = null;
 
   const BASE_AR_SPEED = 5.5;
   const AR_SPEED_PER_LOOP = 0.45;
   const MAX_AR_SPEED = 10.5;
-
-  function currentArSpeed(){
-    return Math.min(MAX_AR_SPEED, BASE_AR_SPEED + loopCount * AR_SPEED_PER_LOOP);
-  }
+  const currentArSpeed = () => Math.min(MAX_AR_SPEED, BASE_AR_SPEED + loopCount * AR_SPEED_PER_LOOP);
 
   function isWall(x,y){
     if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return true;
     return grid[y]?.[x] === "#";
   }
-
-  function wrapTunnel(obj){
-    if (obj.x < 0) obj.x = COLS - 1;
-    if (obj.x >= COLS) obj.x = 0;
+  function wrapTunnel(o){
+    if (o.x < 0) o.x = COLS - 1;
+    if (o.x >= COLS) o.x = 0;
   }
-
-  function canMove(x,y,dir){
-    return !isWall(x + dir.x, y + dir.y);
-  }
+  function canMove(x,y,d){ return !isWall(x+d.x, y+d.y); }
 
   function resetPositions(){
     DJ.x = 13; DJ.y = 23; DJ.dir = dirs.left; DJ.nextDir = dirs.left; DJ._acc = 0;
@@ -331,17 +395,13 @@
       ar._acc = 0;
     });
   }
-
   function rebuildGrid(){
-    for (let r=0;r<ROWS;r++){
-      grid[r] = MAP[r].split("");
-    }
+    for (let r=0;r<ROWS;r++) grid[r] = MAP[r].split("");
   }
 
   function drawTile(x,y,ch){
     const px = x*TILE, py = y*TILE;
-
-    if (ch === "#") {
+    if (ch === "#"){
       ctx.fillStyle = "#3d0f6b";
       ctx.fillRect(px, py, TILE, TILE);
       ctx.strokeStyle = "#8e3bff";
@@ -349,45 +409,27 @@
     } else {
       ctx.fillStyle = "#0c0216";
       ctx.fillRect(px, py, TILE, TILE);
-
-      if (ch === ".") {
+      if (ch === "."){
         ctx.fillStyle = "#ff4fcf";
-        ctx.beginPath();
-        ctx.arc(px+TILE/2, py+TILE/2, 3, 0, Math.PI*2);
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(px+TILE/2, py+TILE/2, 3, 0, Math.PI*2); ctx.fill();
       }
-      if (ch === "o") {
+      if (ch === "o"){
         ctx.fillStyle = "#5dfff7";
-        ctx.beginPath();
-        ctx.arc(px+TILE/2, py+TILE/2, 6, 0, Math.PI*2);
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(px+TILE/2, py+TILE/2, 6, 0, Math.PI*2); ctx.fill();
       }
     }
   }
-
-  function pRect(cx, cy, w, h){
-    ctx.fillRect(cx - w/2, cy - h/2, w, h);
-  }
+  function pRect(cx, cy, w, h){ ctx.fillRect(cx-w/2, cy-h/2, w, h); }
 
   function drawDJ(){
     const cx = DJ.x*TILE + TILE/2;
     const cy = DJ.y*TILE + TILE/2;
-
     ctx.fillStyle = "rgba(0,0,0,0.28)";
-    ctx.beginPath();
-    ctx.ellipse(cx, cy + 8, 9, 4, 0, 0, Math.PI*2);
-    ctx.fill();
-
+    ctx.beginPath(); ctx.ellipse(cx, cy+8, 9, 4, 0, 0, Math.PI*2); ctx.fill();
     const s = 26;
-    const ox = cx - s/2;
-    const oy = cy - s/2;
     ctx.imageSmoothingEnabled = false;
-
-    if (djSprite.complete) ctx.drawImage(djSprite, ox, oy, s, s);
-    else {
-      ctx.fillStyle = "#ffd77f";
-      pRect(cx, cy, 10, 10);
-    }
+    if (djSprite.complete) ctx.drawImage(djSprite, cx-s/2, cy-s/2, s, s);
+    else { ctx.fillStyle="#ffd77f"; pRect(cx,cy,10,10); }
   }
 
   function drawAR(ar){
@@ -396,40 +438,32 @@
     const scared = hypeTimer > 0;
 
     ctx.fillStyle = "rgba(0,0,0,0.45)";
-    ctx.beginPath();
-    ctx.ellipse(cx, cy + 8, 9, 4, 0, 0, Math.PI*2);
-    ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx, cy+8, 9, 4, 0, 0, Math.PI*2); ctx.fill();
 
     ctx.fillStyle = "#050505";
-    ctx.beginPath();
-    ctx.arc(cx, cy - 5, 6, 0, Math.PI*2);
-    ctx.fill();
-    pRect(cx, cy + 3, 14, 12);
-    pRect(cx - 4, cy + 10, 4.5, 6);
-    pRect(cx + 4, cy + 10, 4.5, 6);
+    ctx.beginPath(); ctx.arc(cx, cy-5, 6, 0, Math.PI*2); ctx.fill();
+    pRect(cx, cy+3, 14, 12);
+    pRect(cx-4, cy+10, 4.5, 6);
+    pRect(cx+4, cy+10, 4.5, 6);
 
     ctx.strokeStyle = scared ? "#a9c0ff" : ar.outline;
     ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(cx, cy - 5, 6.5, 0, Math.PI*2);
-    ctx.stroke();
-    ctx.strokeRect(cx - 7, cy - 3, 14, 12);
-    ctx.strokeRect(cx - 6.25, cy + 7, 4.5, 6);
-    ctx.strokeRect(cx + 1.75, cy + 7, 4.5, 6);
+    ctx.beginPath(); ctx.arc(cx, cy-5, 6.5, 0, Math.PI*2); ctx.stroke();
+    ctx.strokeRect(cx-7, cy-3, 14, 12);
+    ctx.strokeRect(cx-6.25, cy+7, 4.5, 6);
+    ctx.strokeRect(cx+1.75, cy+7, 4.5, 6);
     ctx.lineWidth = 1;
 
     ctx.strokeStyle = scared ? "#d0d7ff" : ar.outline;
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(cx - 7, cy + 1);
-    ctx.lineTo(cx - 7 - ar.dir.x*2, cy + 7);
-    ctx.moveTo(cx + 7, cy + 1);
-    ctx.lineTo(cx + 7 - ar.dir.x*2, cy + 7);
+    ctx.moveTo(cx-7, cy+1); ctx.lineTo(cx-7-ar.dir.x*2, cy+7);
+    ctx.moveTo(cx+7, cy+1); ctx.lineTo(cx+7-ar.dir.x*2, cy+7);
     ctx.stroke();
     ctx.lineWidth = 1;
 
     ctx.fillStyle = scared ? "#efe8ff" : "#161616";
-    pRect(cx, cy - 5, 4, 3);
+    pRect(cx, cy-5, 4, 3);
 
     ctx.fillStyle = "#efe8ff";
     ctx.font = "10px system-ui";
@@ -437,26 +471,18 @@
     ctx.fillText(ar.name, cx, cy + TILE*0.7);
   }
 
-  function buildDistanceMap(targetX, targetY){
+  function buildDistanceMap(tx, ty){
     const dist = Array.from({length: ROWS}, () => Array(COLS).fill(Infinity));
     const q = [];
-    dist[targetY][targetX] = 0;
-    q.push([targetX, targetY]);
-
-    let qi = 0;
-    while (qi < q.length){
-      const [x, y] = q[qi++];
-      const d0 = dist[y][x];
-
-      for (const d of dirList){
-        const nx = x + d.x;
-        const ny = y + d.y;
-        if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
-        if (isWall(nx, ny)) continue;
-        if (dist[ny][nx] > d0 + 1){
-          dist[ny][nx] = d0 + 1;
-          q.push([nx, ny]);
-        }
+    dist[ty][tx] = 0; q.push([tx,ty]);
+    let qi=0;
+    while(qi<q.length){
+      const [x,y]=q[qi++], d0=dist[y][x];
+      for(const d of dirList){
+        const nx=x+d.x, ny=y+d.y;
+        if(nx<0||ny<0||nx>=COLS||ny>=ROWS) continue;
+        if(isWall(nx,ny)) continue;
+        if(dist[ny][nx]>d0+1){ dist[ny][nx]=d0+1; q.push([nx,ny]); }
       }
     }
     return dist;
@@ -464,227 +490,212 @@
 
   function chooseDirFromMap(ar, distMap){
     const reverse = {x:-ar.dir.x, y:-ar.dir.y};
-    let best = null, bestD = Infinity;
-
-    for (const d of dirList){
-      if (!canMove(ar.x, ar.y, d)) continue;
-      if (d.x === reverse.x && d.y === reverse.y) continue;
-
-      const nx = ar.x + d.x;
-      const ny = ar.y + d.y;
-      const dd = distMap[ny]?.[nx] ?? Infinity;
-      if (dd < bestD){
-        bestD = dd;
-        best = d;
-      }
+    let best=null, bestD=Infinity;
+    for(const d of dirList){
+      if(!canMove(ar.x, ar.y, d)) continue;
+      if(d.x===reverse.x && d.y===reverse.y) continue;
+      const nx=ar.x+d.x, ny=ar.y+d.y;
+      const dd=distMap[ny]?.[nx] ?? Infinity;
+      if(dd<bestD){ bestD=dd; best=d; }
     }
-    if (best) return best;
-
-    for (const d of dirList){
-      if (canMove(ar.x, ar.y, d)) return d;
-    }
+    if(best) return best;
+    for(const d of dirList) if(canMove(ar.x, ar.y, d)) return d;
     return ar.dir;
   }
 
-  function clampTile(x, y){
-    x = Math.max(0, Math.min(COLS-1, x));
-    y = Math.max(0, Math.min(ROWS-1, y));
-    return {x,y};
+  function clampTile(x,y){
+    return { x: Math.max(0,Math.min(COLS-1,x)), y: Math.max(0,Math.min(ROWS-1,y)) };
   }
-
   function tileAheadOfDJ(steps){
-    return clampTile(DJ.x + DJ.dir.x * steps, DJ.y + DJ.dir.y * steps);
+    return clampTile(DJ.x + DJ.dir.x*steps, DJ.y + DJ.dir.y*steps);
   }
-
   function getArTarget(ar, blinkyPos){
-    if (hypeTimer > 0) return ar.home;
-
-    if (ar.type === "blinky") return {x: DJ.x, y: DJ.y};
-    if (ar.type === "pinky") return tileAheadOfDJ(4);
-
-    if (ar.type === "inky"){
-      const ahead = tileAheadOfDJ(2);
-      const vx = ahead.x - blinkyPos.x;
-      const vy = ahead.y - blinkyPos.y;
-      return clampTile(blinkyPos.x + 2*vx, blinkyPos.y + 2*vy);
+    if(hypeTimer>0) return ar.home;
+    if(ar.type==="blinky") return {x:DJ.x,y:DJ.y};
+    if(ar.type==="pinky") return tileAheadOfDJ(4);
+    if(ar.type==="inky"){
+      const ahead=tileAheadOfDJ(2);
+      const vx=ahead.x-blinkyPos.x, vy=ahead.y-blinkyPos.y;
+      return clampTile(blinkyPos.x+2*vx, blinkyPos.y+2*vy);
     }
-
-    if (ar.type === "clyde"){
-      const dx = ar.x - DJ.x;
-      const dy = ar.y - DJ.y;
-      if (dx*dx + dy*dy <= 36) return ar.home;
-      return {x: DJ.x, y: DJ.y};
+    if(ar.type==="clyde"){
+      const dx=ar.x-DJ.x, dy=ar.y-DJ.y;
+      if(dx*dx+dy*dy<=36) return ar.home;
+      return {x:DJ.x,y:DJ.y};
     }
-
-    return {x: DJ.x, y: DJ.y};
+    return {x:DJ.x,y:DJ.y};
   }
 
   function draw(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
-    for (let r=0;r<ROWS;r++){
-      for (let c=0;c<COLS;c++){
-        drawTile(c,r,grid[r][c]);
-      }
-    }
+    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++) drawTile(c,r,grid[r][c]);
     drawDJ();
     ARS.forEach(drawAR);
   }
 
-  let last = performance.now();
+  let last=performance.now();
   function tick(now){
-    const dt = (now-last)/1000;
-    last = now;
-
-    if (!gameOver && started) update(dt);
-    if (started) draw();
-
+    const dt=(now-last)/1000; last=now;
+    if(!gameOver && started) update(dt);
+    if(started) draw();
     requestAnimationFrame(tick);
   }
 
   function refillTour(){
     rebuildGrid();
-    pelletsLeft = countPellets();
+    pelletsLeft=countPellets();
     loopCount++;
     statusEl.textContent = `Tour looped x${loopCount}. Your exes get faster.`;
   }
 
-  function endGame(){
-    gameOver = true;
+  function showGameOver(){
+    gameOverOverlay.style.display="grid";
     finalScoreEl.textContent = score;
 
-    const highs = addHighScore(score);
+    const highs = loadHighScores().sort((a,b)=>b.score-a.score);
     renderHighScores(highs);
 
-    gameOverOverlay.style.display = "grid";
-    statusEl.textContent = "YOUVE GONE MAD";
+    if (qualifiesForHighScore(score)){
+      pendingHighScore = score;
+      handleBox.style.display = "block";
+      igHandleInput.value = "";
+      submitHandleBtn.disabled = true;
+      handleError.style.display = "none";
+      igHandleInput.focus();
+    } else {
+      pendingHighScore = null;
+      handleBox.style.display = "none";
+    }
+  }
+
+  function endGame(){
+    gameOver=true;
+    statusEl.textContent="YOUVE GONE MAD";
+    showGameOver();
   }
 
   function update(dt){
-    if (hypeTimer > 0){
-      hypeTimer -= dt;
-      if (hypeTimer <= 0){
-        hypeTimer = 0;
-        statusEl.textContent = "Collect the gigs";
-      }
+    if(hypeTimer>0){
+      hypeTimer-=dt;
+      if(hypeTimer<=0){ hypeTimer=0; statusEl.textContent="Collect the gigs"; }
     }
 
-    DJ._acc += DJ.speed * dt;
-    while (DJ._acc >= 1){
-      DJ._acc -= 1;
-
-      if (canMove(DJ.x, DJ.y, DJ.nextDir)) DJ.dir = DJ.nextDir;
-
-      if (canMove(DJ.x, DJ.y, DJ.dir)){
-        DJ.x += DJ.dir.x;
-        DJ.y += DJ.dir.y;
-        wrapTunnel(DJ);
+    DJ._acc += DJ.speed*dt;
+    while(DJ._acc>=1){
+      DJ._acc-=1;
+      if(canMove(DJ.x, DJ.y, DJ.nextDir)) DJ.dir=DJ.nextDir;
+      if(canMove(DJ.x, DJ.y, DJ.dir)){
+        DJ.x+=DJ.dir.x; DJ.y+=DJ.dir.y; wrapTunnel(DJ);
       }
 
-      const cell = grid[DJ.y]?.[DJ.x];
-      if (cell === "." || cell === "o"){
-        grid[DJ.y][DJ.x] = " ";
+      const cell=grid[DJ.y]?.[DJ.x];
+      if(cell==="."||cell==="o"){
+        grid[DJ.y][DJ.x]=" ";
         pelletsLeft--;
-        score += (cell === "o") ? 50 : 10;
-        scoreEl.textContent = score;
-
-        if (cell === "o"){
-          hypeTimer = 8;
-          statusEl.textContent = "HYPE MODE!";
-        }
-
-        if (pelletsLeft <= 0) refillTour();
+        score += (cell==="o")?50:10;
+        scoreEl.textContent=score;
+        if(cell==="o"){ hypeTimer=8; statusEl.textContent="HYPE MODE!"; }
+        if(pelletsLeft<=0) refillTour();
       }
     }
 
-    const blinky = ARS.find(a => a.type === "blinky") || ARS[0];
-    const blinkyPos = {x: blinky.x, y: blinky.y};
-    const targets = ARS.map(ar => getArTarget(ar, blinkyPos));
+    const blinky=ARS.find(a=>a.type==="blinky")||ARS[0];
+    const blinkyPos={x:blinky.x,y:blinky.y};
+    const targets=ARS.map(ar=>getArTarget(ar, blinkyPos));
+    const distCache=new Map();
+    const keyOf=t=>t.x+","+t.y;
+    const arSpeed=currentArSpeed();
 
-    const distCache = new Map();
-    const keyOf = t => t.x + "," + t.y;
-
-    const arSpeed = currentArSpeed();
-
-    ARS.forEach((ar, i) => {
-      ar._acc += arSpeed * dt;
-
-      while (ar._acc >= 1){
-        ar._acc -= 1;
-
-        const t = targets[i];
-        const k = keyOf(t);
-        if (!distCache.has(k)) distCache.set(k, buildDistanceMap(t.x, t.y));
-        const distMap = distCache.get(k);
-
-        ar.dir = chooseDirFromMap(ar, distMap);
-
-        if (canMove(ar.x, ar.y, ar.dir)){
-          ar.x += ar.dir.x;
-          ar.y += ar.dir.y;
-          wrapTunnel(ar);
+    ARS.forEach((ar,i)=>{
+      ar._acc += arSpeed*dt;
+      while(ar._acc>=1){
+        ar._acc-=1;
+        const t=targets[i], k=keyOf(t);
+        if(!distCache.has(k)) distCache.set(k, buildDistanceMap(t.x,t.y));
+        const distMap=distCache.get(k);
+        ar.dir=chooseDirFromMap(ar, distMap);
+        if(canMove(ar.x, ar.y, ar.dir)){
+          ar.x+=ar.dir.x; ar.y+=ar.dir.y; wrapTunnel(ar);
         }
       }
     });
 
     ARS.forEach(ar=>{
-      if (ar.x === DJ.x && ar.y === DJ.y){
-        if (hypeTimer > 0){
-          score += 200;
-          scoreEl.textContent = score;
-          ar.x = ar.home.x; ar.y = ar.home.y;
-          ar.dir = dirs.left; ar._acc = 0;
+      if(ar.x===DJ.x && ar.y===DJ.y){
+        if(hypeTimer>0){
+          score+=200; scoreEl.textContent=score;
+          ar.x=ar.home.x; ar.y=ar.home.y; ar.dir=dirs.left; ar._acc=0;
         } else {
-          lives--;
-          livesEl.textContent = lives;
-          if (lives <= 0){
-            endGame();
-          } else {
-            statusEl.textContent = "Reset. Do not text back.";
-            resetPositions();
-          }
+          lives--; livesEl.textContent=lives;
+          if(lives<=0) endGame();
+          else { statusEl.textContent="Reset. Do not text back."; resetPositions(); }
         }
       }
     });
   }
 
   function startGame(){
-    if (started) return;
-    started = true;
-    gameOver = false;
-    startOverlay.style.display = "none";
-    gameOverOverlay.style.display = "none";
-    statusEl.textContent = "Collect the gigs";
-
+    if(started) return;
+    started=true; gameOver=false;
+    startOverlay.style.display="none";
+    gameOverOverlay.style.display="none";
+    handleBox.style.display="none";
+    statusEl.textContent="Collect the gigs";
     music.play().catch(()=>{});
   }
 
   startOverlay.addEventListener("click", startGame);
 
-  window.addEventListener("keydown", e=>{
-    const k = e.key.toLowerCase();
+  igHandleInput.addEventListener("input", ()=>{
+    const h = normalizeHandle(igHandleInput.value);
+    const ok = isValidHandle(h);
+    submitHandleBtn.disabled = !ok;
+    handleError.style.display = "none";
+  });
 
-    if (!started && (k === " " || k === "enter")){
-      e.preventDefault();
-      startGame();
+  function submitHandle(){
+    if(pendingHighScore == null) return;
+    const h = normalizeHandle(igHandleInput.value);
+    if(!isValidHandle(h)){
+      handleError.style.display = "block";
+      submitHandleBtn.disabled = true;
       return;
     }
+    const highs = addHighScore(h, pendingHighScore);
+    renderHighScores(highs);
+    pendingHighScore = null;
+    handleBox.style.display = "none";
+  }
 
-    if (k === "arrowleft" || k === "a") DJ.nextDir = dirs.left;
-    if (k === "arrowright" || k === "d") DJ.nextDir = dirs.right;
-    if (k === "arrowup" || k === "w") DJ.nextDir = dirs.up;
-    if (k === "arrowdown" || k === "s") DJ.nextDir = dirs.down;
+  submitHandleBtn.addEventListener("click", submitHandle);
+  igHandleInput.addEventListener("keydown", (e)=>{
+    if(e.key==="Enter" && !submitHandleBtn.disabled){
+      e.preventDefault();
+      submitHandle();
+    }
+  });
 
-    if (k === "r"){
-      // Restart back to start screen
-      score = 0; lives = 3; hypeTimer = 0; loopCount = 0; started = false; gameOver = false;
-      rebuildGrid();
-      pelletsLeft = countPellets();
-      resetPositions();
-      scoreEl.textContent = score;
-      livesEl.textContent = lives;
-      statusEl.textContent = "Click to start";
-      gameOverOverlay.style.display = "none";
-      startOverlay.style.display = "grid";
+  window.addEventListener("keydown", e=>{
+    const k=e.key.toLowerCase();
+
+    if(!started && (k===" "||k==="enter")){
+      e.preventDefault(); startGame(); return;
+    }
+
+    if(k==="arrowleft"||k==="a") DJ.nextDir=dirs.left;
+    if(k==="arrowright"||k==="d") DJ.nextDir=dirs.right;
+    if(k==="arrowup"||k==="w") DJ.nextDir=dirs.up;
+    if(k==="arrowdown"||k==="s") DJ.nextDir=dirs.down;
+
+    if(k==="r"){
+      score=0; lives=3; hypeTimer=0; loopCount=0;
+      started=false; gameOver=false; pendingHighScore=null;
+      rebuildGrid(); pelletsLeft=countPellets(); resetPositions();
+      scoreEl.textContent=score; livesEl.textContent=lives;
+      statusEl.textContent="Click to start";
+      gameOverOverlay.style.display="none";
+      handleBox.style.display="none";
+      startOverlay.style.display="grid";
     }
   });
 
