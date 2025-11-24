@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DJ vs A&Rs – AVOID YOUR EXES!</title>
+<style>
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: #0c0216;
+    color: #efe8ff;
+    font-family: system-ui, sans-serif;
+  }
+  .wrap { display: grid; place-items: center; height: 100%; position: relative; }
+  canvas {
+    background: #0c0216;
+    border: 2px solid #8e3bff;
+    border-radius: 12px;
+    image-rendering: pixelated;
+    box-shadow: 0 0 25px #7900ff55;
+  }
+  .hud {
+    width: min(92vw, 720px);
+    display:flex; justify-content: space-between;
+    margin: 10px 0 6px;
+    font-weight: 600; letter-spacing: 0.4px;
+    color: #c9a7ff;
+    text-shadow: 0 0 6px #8e3bff;
+    z-index: 2;
+  }
+  .sub {
+    opacity: 0.75;
+    font-size: 12px;
+    margin-top: 6px;
+    text-align:center;
+    color:#cdaeff;
+    z-index: 2;
+  }
+  .kbd {
+    padding: 0 6px;
+    border:1px solid #8e3bff;
+    border-bottom: 2px solid #8e3bff;
+    border-radius: 6px;
+    background:#1b0930;
+    color:#cfaeff;
+  }
+
+  /* Overlays */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: radial-gradient(ellipse at center, #140029cc 0%, #06000fcc 70%);
+    z-index: 5;
+    text-align: center;
+    cursor: pointer;
+  }
+  .overlay h1 {
+    font-size: clamp(34px, 5.6vw, 60px);
+    margin: 0 0 10px;
+    color: #ff4fd8;
+    text-shadow: 0 0 10px #ff4fd8, 0 0 30px #8e3bff;
+    letter-spacing: 1.5px;
+  }
+  .overlay p {
+    margin: 0;
+    font-size: clamp(14px, 2.2vw, 18px);
+    color: #efe8ff;
+    opacity: 0.95;
+    text-shadow: 0 0 8px #8e3bff;
+  }
+  .overlay .tiny {
+    margin-top: 10px;
+    font-size: 12px;
+    opacity: 0.75;
+  }
+
+  /* High score list */
+  .scores {
+    margin-top: 14px;
+    display: inline-block;
+    text-align: left;
+    background: #0b0016aa;
+    border: 1px solid #8e3bff;
+    border-radius: 10px;
+    padding: 10px 14px;
+    box-shadow: 0 0 14px #8e3bff55;
+    min-width: 220px;
+  }
+  .scores h2 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    color: #cdaeff;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+  }
+  .scores ol {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 14px;
+    color: #efe8ff;
+  }
+  .scores li {
+    margin: 3px 0;
+  }
+  .score-highlight {
+    color: #5dfff7;
+    font-weight: 700;
+    text-shadow: 0 0 8px #5dfff7;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hud">
+    <div>Score: <span id="score">0</span></div>
+    <div>Lives: <span id="lives">3</span></div>
+    <div>Status: <span id="status">Collect the gigs</span></div>
+  </div>
+
+  <canvas id="game"></canvas>
+
+  <div class="sub">
+    Move: <span class="kbd">Arrow keys</span> or <span class="kbd">WASD</span>.
+    Power drop = HYPE. Endless mode. Clear gigs to loop the tour.
+    Your exes get faster each loop.
+  </div>
+
+  <!-- Start screen overlay -->
+  <div id="startOverlay" class="overlay" role="button" aria-label="Start game">
+    <div>
+      <h1>AVOID YOUR EXES!</h1>
+      <p>Click anywhere or press Space / Enter to start</p>
+      <p class="tiny">Music will start when you begin.</p>
+    </div>
+  </div>
+
+  <!-- Game over overlay -->
+  <div id="gameOverOverlay" class="overlay" style="display:none;" role="button" aria-label="Game over">
+    <div>
+      <h1>YOUVE GONE MAD. GAME OVER</h1>
+      <p>Your score: <span id="finalScore" class="score-highlight">0</span></p>
+
+      <div class="scores">
+        <h2>High Scores</h2>
+        <ol id="highScoreList"></ol>
+      </div>
+
+      <p class="tiny">Press R to restart</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+
+  const TILE = 24;
+
+  const MAP = [
+    "############################",
+    "#............##............#",
+    "#.####.#####.##.#####.####.#",
+    "#o####.#####.##.#####.####o#",
+    "#.####.#####.##.#####.####.#",
+    "#..........................#",
+    "#.####.##.########.##.####.#",
+    "#.####.##.########.##.####.#",
+    "#......##....##....##......#",
+    "######.##### ## #####.######",
+    "     #.##### ## #####.#     ",
+    "     #.##          ##.#     ",
+    "     #.## ###--### ##.#     ",
+    "######.## #      # ##.######",
+    "      .   #      #   .      ",
+    "######.## #      # ##.######",
+    "     #.## ######## ##.#     ",
+    "     #.##          ##.#     ",
+    "     #.## ######## ##.#     ",
+    "######.## ######## ##.######",
+    "#............##............#",
+    "#.####.#####.##.#####.####.#",
+    "#o..##................##..o#",
+    "###.##.##.########.##.##.###",
+    "#......##....##....##......#",
+    "#.##########.##.##########.#",
+    "#.##########.##.##########.#",
+    "#..........................#",
+    "############################",
+  ];
+
+  const ROWS = MAP.length;
+  const COLS = MAP[0].length;
+
+  canvas.width = COLS * TILE;
+  canvas.height = ROWS * TILE;
+
+  // Sprite
+  const djSprite = new Image();
+  djSprite.src = "./dj_sprite_48.png";
+  djSprite.onerror = () => {
+    console.error("Could not load dj_sprite_48.png. Put it in the same folder as this HTML.");
+  };
+
+  // Music
+  const music = new Audio("Loveli%20Lori.mp3");
+  music.loop = true;
+  music.volume = 0.6;
+
+  const grid = MAP.map(row => row.split(""));
+
+  const scoreEl = document.getElementById("score");
+  const livesEl = document.getElementById("lives");
+  const statusEl = document.getElementById("status");
+
+  const startOverlay = document.getElementById("startOverlay");
+  const gameOverOverlay = document.getElementById("gameOverOverlay");
+  const finalScoreEl = document.getElementById("finalScore");
+  const highScoreListEl = document.getElementById("highScoreList");
+
+  const HIGH_SCORE_KEY = "djPacHighScores";
+  const MAX_SCORES = 5;
+
+  function loadHighScores(){
+    try {
+      const raw = localStorage.getItem(HIGH_SCORE_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveHighScores(arr){
+    localStorage.setItem(HIGH_SCORE_KEY, JSON.stringify(arr));
+  }
+
+  function addHighScore(newScore){
+    const scores = loadHighScores();
+    scores.push(newScore);
+    scores.sort((a,b)=>b-a);
+    const trimmed = scores.slice(0, MAX_SCORES);
+    saveHighScores(trimmed);
+    return trimmed;
+  }
+
+  function renderHighScores(scores){
+    highScoreListEl.innerHTML = "";
+    if (!scores.length){
+      const li = document.createElement("li");
+      li.textContent = "No scores yet. Be the first menace.";
+      highScoreListEl.appendChild(li);
+      return;
+    }
+    scores.forEach((s)=>{
+      const li = document.createElement("li");
+      li.textContent = s;
+      highScoreListEl.appendChild(li);
+    });
+  }
+
+  const dirs = {
+    left:  {x:-1,y:0},
+    right: {x:1,y:0},
+    up:    {x:0,y:-1},
+    down:  {x:0,y:1}
+  };
+  const dirList = [dirs.left, dirs.right, dirs.up, dirs.down];
+
+  const DJ = {
+    x: 13, y: 23,
+    dir: dirs.left,
+    nextDir: dirs.left,
+    speed: 6,
+    _acc: 0
+  };
+
+  const ARS = [
+    {x:13, y:14, dir: dirs.left,  home:{x:13,y:14}, name:"Chad", type:"blinky", outline:"#ff4fd8", _acc:0},
+    {x:14, y:14, dir: dirs.right, home:{x:14,y:14}, name:"Brad", type:"pinky",  outline:"#ff9bf3", _acc:0},
+    {x:12, y:14, dir: dirs.up,    home:{x:12,y:14}, name:"Thad", type:"inky",   outline:"#5dfff7", _acc:0},
+    {x:15, y:14, dir: dirs.down,  home:{x:15,y:14}, name:"Kyle", type:"clyde",  outline:"#9bff6a", _acc:0},
+  ];
+
+  function countPellets(){
+    let n = 0;
+    for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++) {
+      const ch = grid[r]?.[c];
+      if (ch === "." || ch === "o") n++;
+    }
+    return n;
+  }
+
+  let pelletsLeft = countPellets();
+  let score = 0;
+  let lives = 3;
+  let hypeTimer = 0;
+  let gameOver = false;
+  let loopCount = 0;
+  let started = false;
+
+  const BASE_AR_SPEED = 5.5;
+  const AR_SPEED_PER_LOOP = 0.45;
+  const MAX_AR_SPEED = 10.5;
+
+  function currentArSpeed(){
+    return Math.min(MAX_AR_SPEED, BASE_AR_SPEED + loopCount * AR_SPEED_PER_LOOP);
+  }
+
+  function isWall(x,y){
+    if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return true;
+    return grid[y]?.[x] === "#";
+  }
+
+  function wrapTunnel(obj){
+    if (obj.x < 0) obj.x = COLS - 1;
+    if (obj.x >= COLS) obj.x = 0;
+  }
+
+  function canMove(x,y,dir){
+    return !isWall(x + dir.x, y + dir.y);
+  }
+
+  function resetPositions(){
+    DJ.x = 13; DJ.y = 23; DJ.dir = dirs.left; DJ.nextDir = dirs.left; DJ._acc = 0;
+    ARS.forEach((ar,i)=>{
+      ar.x = ar.home.x; ar.y = ar.home.y;
+      ar.dir = i%2 ? dirs.right : dirs.left;
+      ar._acc = 0;
+    });
+  }
+
+  function rebuildGrid(){
+    for (let r=0;r<ROWS;r++){
+      grid[r] = MAP[r].split("");
+    }
+  }
+
+  function drawTile(x,y,ch){
+    const px = x*TILE, py = y*TILE;
+
+    if (ch === "#") {
+      ctx.fillStyle = "#3d0f6b";
+      ctx.fillRect(px, py, TILE, TILE);
+      ctx.strokeStyle = "#8e3bff";
+      ctx.strokeRect(px+1, py+1, TILE-2, TILE-2);
+    } else {
+      ctx.fillStyle = "#0c0216";
+      ctx.fillRect(px, py, TILE, TILE);
+
+      if (ch === ".") {
+        ctx.fillStyle = "#ff4fcf";
+        ctx.beginPath();
+        ctx.arc(px+TILE/2, py+TILE/2, 3, 0, Math.PI*2);
+        ctx.fill();
+      }
+      if (ch === "o") {
+        ctx.fillStyle = "#5dfff7";
+        ctx.beginPath();
+        ctx.arc(px+TILE/2, py+TILE/2, 6, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+  }
+
+  function pRect(cx, cy, w, h){
+    ctx.fillRect(cx - w/2, cy - h/2, w, h);
+  }
+
+  function drawDJ(){
+    const cx = DJ.x*TILE + TILE/2;
+    const cy = DJ.y*TILE + TILE/2;
+
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 8, 9, 4, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    const s = 26;
+    const ox = cx - s/2;
+    const oy = cy - s/2;
+    ctx.imageSmoothingEnabled = false;
+
+    if (djSprite.complete) ctx.drawImage(djSprite, ox, oy, s, s);
+    else {
+      ctx.fillStyle = "#ffd77f";
+      pRect(cx, cy, 10, 10);
+    }
+  }
+
+  function drawAR(ar){
+    const cx = ar.x*TILE + TILE/2;
+    const cy = ar.y*TILE + TILE/2;
+    const scared = hypeTimer > 0;
+
+    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 8, 9, 4, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.fillStyle = "#050505";
+    ctx.beginPath();
+    ctx.arc(cx, cy - 5, 6, 0, Math.PI*2);
+    ctx.fill();
+    pRect(cx, cy + 3, 14, 12);
+    pRect(cx - 4, cy + 10, 4.5, 6);
+    pRect(cx + 4, cy + 10, 4.5, 6);
+
+    ctx.strokeStyle = scared ? "#a9c0ff" : ar.outline;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy - 5, 6.5, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.strokeRect(cx - 7, cy - 3, 14, 12);
+    ctx.strokeRect(cx - 6.25, cy + 7, 4.5, 6);
+    ctx.strokeRect(cx + 1.75, cy + 7, 4.5, 6);
+    ctx.lineWidth = 1;
+
+    ctx.strokeStyle = scared ? "#d0d7ff" : ar.outline;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx - 7, cy + 1);
+    ctx.lineTo(cx - 7 - ar.dir.x*2, cy + 7);
+    ctx.moveTo(cx + 7, cy + 1);
+    ctx.lineTo(cx + 7 - ar.dir.x*2, cy + 7);
+    ctx.stroke();
+    ctx.lineWidth = 1;
+
+    ctx.fillStyle = scared ? "#efe8ff" : "#161616";
+    pRect(cx, cy - 5, 4, 3);
+
+    ctx.fillStyle = "#efe8ff";
+    ctx.font = "10px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText(ar.name, cx, cy + TILE*0.7);
+  }
+
+  function buildDistanceMap(targetX, targetY){
+    const dist = Array.from({length: ROWS}, () => Array(COLS).fill(Infinity));
+    const q = [];
+    dist[targetY][targetX] = 0;
+    q.push([targetX, targetY]);
+
+    let qi = 0;
+    while (qi < q.length){
+      const [x, y] = q[qi++];
+      const d0 = dist[y][x];
+
+      for (const d of dirList){
+        const nx = x + d.x;
+        const ny = y + d.y;
+        if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+        if (isWall(nx, ny)) continue;
+        if (dist[ny][nx] > d0 + 1){
+          dist[ny][nx] = d0 + 1;
+          q.push([nx, ny]);
+        }
+      }
+    }
+    return dist;
+  }
+
+  function chooseDirFromMap(ar, distMap){
+    const reverse = {x:-ar.dir.x, y:-ar.dir.y};
+    let best = null, bestD = Infinity;
+
+    for (const d of dirList){
+      if (!canMove(ar.x, ar.y, d)) continue;
+      if (d.x === reverse.x && d.y === reverse.y) continue;
+
+      const nx = ar.x + d.x;
+      const ny = ar.y + d.y;
+      const dd = distMap[ny]?.[nx] ?? Infinity;
+      if (dd < bestD){
+        bestD = dd;
+        best = d;
+      }
+    }
+    if (best) return best;
+
+    for (const d of dirList){
+      if (canMove(ar.x, ar.y, d)) return d;
+    }
+    return ar.dir;
+  }
+
+  function clampTile(x, y){
+    x = Math.max(0, Math.min(COLS-1, x));
+    y = Math.max(0, Math.min(ROWS-1, y));
+    return {x,y};
+  }
+
+  function tileAheadOfDJ(steps){
+    return clampTile(DJ.x + DJ.dir.x * steps, DJ.y + DJ.dir.y * steps);
+  }
+
+  function getArTarget(ar, blinkyPos){
+    if (hypeTimer > 0) return ar.home;
+
+    if (ar.type === "blinky") return {x: DJ.x, y: DJ.y};
+    if (ar.type === "pinky") return tileAheadOfDJ(4);
+
+    if (ar.type === "inky"){
+      const ahead = tileAheadOfDJ(2);
+      const vx = ahead.x - blinkyPos.x;
+      const vy = ahead.y - blinkyPos.y;
+      return clampTile(blinkyPos.x + 2*vx, blinkyPos.y + 2*vy);
+    }
+
+    if (ar.type === "clyde"){
+      const dx = ar.x - DJ.x;
+      const dy = ar.y - DJ.y;
+      if (dx*dx + dy*dy <= 36) return ar.home;
+      return {x: DJ.x, y: DJ.y};
+    }
+
+    return {x: DJ.x, y: DJ.y};
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    for (let r=0;r<ROWS;r++){
+      for (let c=0;c<COLS;c++){
+        drawTile(c,r,grid[r][c]);
+      }
+    }
+    drawDJ();
+    ARS.forEach(drawAR);
+  }
+
+  let last = performance.now();
+  function tick(now){
+    const dt = (now-last)/1000;
+    last = now;
+
+    if (!gameOver && started) update(dt);
+    if (started) draw();
+
+    requestAnimationFrame(tick);
+  }
+
+  function refillTour(){
+    rebuildGrid();
+    pelletsLeft = countPellets();
+    loopCount++;
+    statusEl.textContent = `Tour looped x${loopCount}. Your exes get faster.`;
+  }
+
+  function endGame(){
+    gameOver = true;
+    finalScoreEl.textContent = score;
+
+    const highs = addHighScore(score);
+    renderHighScores(highs);
+
+    gameOverOverlay.style.display = "grid";
+    statusEl.textContent = "YOUVE GONE MAD";
+  }
+
+  function update(dt){
+    if (hypeTimer > 0){
+      hypeTimer -= dt;
+      if (hypeTimer <= 0){
+        hypeTimer = 0;
+        statusEl.textContent = "Collect the gigs";
+      }
+    }
+
+    DJ._acc += DJ.speed * dt;
+    while (DJ._acc >= 1){
+      DJ._acc -= 1;
+
+      if (canMove(DJ.x, DJ.y, DJ.nextDir)) DJ.dir = DJ.nextDir;
+
+      if (canMove(DJ.x, DJ.y, DJ.dir)){
+        DJ.x += DJ.dir.x;
+        DJ.y += DJ.dir.y;
+        wrapTunnel(DJ);
+      }
+
+      const cell = grid[DJ.y]?.[DJ.x];
+      if (cell === "." || cell === "o"){
+        grid[DJ.y][DJ.x] = " ";
+        pelletsLeft--;
+        score += (cell === "o") ? 50 : 10;
+        scoreEl.textContent = score;
+
+        if (cell === "o"){
+          hypeTimer = 8;
+          statusEl.textContent = "HYPE MODE!";
+        }
+
+        if (pelletsLeft <= 0) refillTour();
+      }
+    }
+
+    const blinky = ARS.find(a => a.type === "blinky") || ARS[0];
+    const blinkyPos = {x: blinky.x, y: blinky.y};
+    const targets = ARS.map(ar => getArTarget(ar, blinkyPos));
+
+    const distCache = new Map();
+    const keyOf = t => t.x + "," + t.y;
+
+    const arSpeed = currentArSpeed();
+
+    ARS.forEach((ar, i) => {
+      ar._acc += arSpeed * dt;
+
+      while (ar._acc >= 1){
+        ar._acc -= 1;
+
+        const t = targets[i];
+        const k = keyOf(t);
+        if (!distCache.has(k)) distCache.set(k, buildDistanceMap(t.x, t.y));
+        const distMap = distCache.get(k);
+
+        ar.dir = chooseDirFromMap(ar, distMap);
+
+        if (canMove(ar.x, ar.y, ar.dir)){
+          ar.x += ar.dir.x;
+          ar.y += ar.dir.y;
+          wrapTunnel(ar);
+        }
+      }
+    });
+
+    ARS.forEach(ar=>{
+      if (ar.x === DJ.x && ar.y === DJ.y){
+        if (hypeTimer > 0){
+          score += 200;
+          scoreEl.textContent = score;
+          ar.x = ar.home.x; ar.y = ar.home.y;
+          ar.dir = dirs.left; ar._acc = 0;
+        } else {
+          lives--;
+          livesEl.textContent = lives;
+          if (lives <= 0){
+            endGame();
+          } else {
+            statusEl.textContent = "Reset. Do not text back.";
+            resetPositions();
+          }
+        }
+      }
+    });
+  }
+
+  function startGame(){
+    if (started) return;
+    started = true;
+    gameOver = false;
+    startOverlay.style.display = "none";
+    gameOverOverlay.style.display = "none";
+    statusEl.textContent = "Collect the gigs";
+
+    music.play().catch(()=>{});
+  }
+
+  startOverlay.addEventListener("click", startGame);
+
+  window.addEventListener("keydown", e=>{
+    const k = e.key.toLowerCase();
+
+    if (!started && (k === " " || k === "enter")){
+      e.preventDefault();
+      startGame();
+      return;
+    }
+
+    if (k === "arrowleft" || k === "a") DJ.nextDir = dirs.left;
+    if (k === "arrowright" || k === "d") DJ.nextDir = dirs.right;
+    if (k === "arrowup" || k === "w") DJ.nextDir = dirs.up;
+    if (k === "arrowdown" || k === "s") DJ.nextDir = dirs.down;
+
+    if (k === "r"){
+      // Restart back to start screen
+      score = 0; lives = 3; hypeTimer = 0; loopCount = 0; started = false; gameOver = false;
+      rebuildGrid();
+      pelletsLeft = countPellets();
+      resetPositions();
+      scoreEl.textContent = score;
+      livesEl.textContent = lives;
+      statusEl.textContent = "Click to start";
+      gameOverOverlay.style.display = "none";
+      startOverlay.style.display = "grid";
+    }
+  });
+
+  resetPositions();
+  renderHighScores(loadHighScores());
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
